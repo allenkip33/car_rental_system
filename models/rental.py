@@ -7,7 +7,7 @@ class Rental:
         self._car_id = car_id
         self._start_date = start_date
         self._end_date = end_date
-        self._price_per_day = float(price_per_day) # Explicitly cast to float
+        self._price_per_day = float(price_per_day)
         self._status = status
 
     @property
@@ -38,7 +38,7 @@ class Rental:
         start = date.fromisoformat(self._start_date)
         end = date.fromisoformat(self._end_date)
         delta = (end - start).days
-        return delta if delta > 0 else 1  # Prevents 0-day charges if picked up/dropped off same day
+        return delta if delta > 0 else 1
 
     def total_cost(self):
         return self.rental_days() * self._price_per_day
