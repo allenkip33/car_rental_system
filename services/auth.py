@@ -9,11 +9,9 @@ class AuthService:
         self.users_file = users_file
         self.current_user = None
 
-    # Hash the password
     def hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
 
-    # Register a new user
     def register(self, username, password, role="Customer"):
         users = self.data_manager.load_data(self.users_file)
 
@@ -33,7 +31,6 @@ class AuthService:
 
         return True
 
-    # Login a user
     def login(self, username, password):
         users = self.data_manager.load_data(self.users_file)
         password_hash = self.hash_password(password)
@@ -49,6 +46,5 @@ class AuthService:
 
         return None
 
-    # Logout the current user
     def logout(self):
         self.current_user = None

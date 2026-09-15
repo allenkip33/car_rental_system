@@ -14,7 +14,7 @@ This is a Python project for managing cars, users and rentals.
 ## How to Run
 
 Install the requirements:
-
+ 
 ```bash
 pip instll -r requirements.txt
 ```
