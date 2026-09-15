@@ -1,0 +1,12 @@
+[
+    {
+        "username": "Abdulsalam",
+        "password_hash": "be94361e3f33ec375934bbe2a1463e904caab3c461c029aa34c9b462a77e68c6",
+        "role": "Admin"
+    },
+    {
+        "username": "absam",
+        "password_hash": "be94361e3f33ec375934bbe2a1463e904caab3c461c029aa34c9b462a77e68c6",
+        "role": "Customer"
+    }
+]

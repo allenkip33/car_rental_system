@@ -1,0 +1,11 @@
+[
+    {
+        "rental_id": "R1",
+        "username": "absam",
+        "car_id": "C001",
+        "start_date": "2026-09-15",
+        "end_date": "2026-09-18",
+        "price_per_day": 4000.0,
+        "status": "Cancelled"
+    }
+]
