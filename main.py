@@ -1,15 +1,15 @@
 from rich.console import Console
-from rich.table import Table
 
 from services.auth import AuthService
 from services.data_manager import DataManager
 from services.rental_service import RentalService
-from utils.validators import validate_date, validate_required
-from utils.decorators import login_required
+from utils.decorators import login_required, admin_required
+from utils.validators import validate_date, validate_price, validate_required
+
 
 console = Console()
 
-USERS_FILE = "data/users.json"
+USERS_FILE = "data/user.json"
 CARS_FILE = "data/cars.json"
 RENTALS_FILE = "data/rentals.json"
 
@@ -18,189 +18,389 @@ auth = AuthService(manager, USERS_FILE)
 rental_service = RentalService(manager, RENTALS_FILE, CARS_FILE)
 
 require_auth = login_required(auth)
+require_admin = admin_required(auth)
+
+
+def show_header(title):
+    console.print()
+    console.print("----------------------------------------")
+    console.print(f"            {title}")
+    console.print("----------------------------------------")
+
 
 def register():
-    console.print("\n--- Register ---")
-    username = input("Enter username: ")
-    password = input("Enter password: ")
+    show_header("REGISTER")
+
+    username = input("Username: ").strip()
+    password = input("Password: ").strip()
 
     if not validate_required(username) or not validate_required(password):
-        console.print("[red]Username and password are required.[/red]")
+        console.print("Username and password are required.")
         return
 
-    if auth.register(username, password):
-        console.print("[green]User registered successfully.[/green]")
+    console.print("\nAccount type:")
+    console.print("1. Customer")
+    console.print("2. Admin")
+
+    role_choice = input("Choose account type: ").strip()
+
+    if role_choice == "1":
+        role = "Customer"
+    elif role_choice == "2":
+        role = "Admin"
     else:
-        console.print("[red]Username already exists.[/red]")
+        console.print("Invalid account type.")
+        return
+
+    if auth.register(username, password, role):
+        console.print("Account created successfully.")
+
+        user = auth.login(username, password)
+
+        if user:
+            console.print(f"Welcome, {user.username}!")
+    else:
+        console.print("Username already exists.")
+
 
 def login():
-    console.print("\n--- Login ---")
-    username = input("Enter username: ")
-    password = input("Enter password: ")
+    show_header("LOGIN")
+
+    username = input("Username: ").strip()
+    password = input("Password: ").strip()
 
     user = auth.login(username, password)
-    if user:
-        console.print(f"[green]Login successful. Welcome {user.username}![/green]")
-        console.print(f"Role: {user.role}")
-        return user
 
-    console.print("[red]Invalid username or password.[/red]")
-    return None
+    if user:
+        console.print(f"\nLogin successful. Welcome, {user.username}!")
+        return True
+
+    console.print("Invalid username or password.")
+    return False
+
 
 def list_cars():
     cars = manager.load_data(CARS_FILE)
+
     if not cars:
-        console.print("[yellow]No cars found.[/yellow]")
+        console.print("\nNo cars found.")
         return
 
-    table = Table(title="Available Cars")
-    table.add_column("ID")
-    table.add_column("Brand")
-    table.add_column("Model")
-    table.add_column("Year")
-    table.add_column("Price/Day")
-    table.add_column("Available")
+    console.print("\nID       Brand       Model       Year       Price/Day       Status")
+    console.print("---------------------------------------------------------------------")
 
     for car in cars:
-        table.add_row(
-            car["car_id"], car["brand"], car["model"],
-            str(car["year"]), str(car["price_per_day"]), str(car["available"])
+        status = "Available" if car["available"] else "Rented"
+
+        console.print(
+            f"{car['car_id']:<8}"
+            f"{car['brand']:<12}"
+            f"{car['model']:<12}"
+            f"{car['year']:<11}"
+            f"KSh {car['price_per_day']:<10.2f}"
+            f"{status}"
         )
-    console.print(table)
 
-@require_auth
+
+@require_admin
 def add_car():
-    user = auth.current_user
-    if user.role != "Admin":
-        console.print("[red]Only an Admin can add cars.[/red]")
-        return
+    show_header("ADD CAR")
 
-    console.print("\n--- Add Car ---")
-    car_id = input("Enter car ID: ")
-    brand = input("Enter brand: ")
-    model = input("Enter model: ")
-    year = input("Enter year: ")
-    price = input("Enter price per day: ")
+    car_id = input("Car ID: ").strip()
+    brand = input("Brand: ").strip()
+    model = input("Model: ").strip()
+    year = input("Year: ").strip()
+    price = input("Price per day: ").strip()
 
     if not validate_required(car_id):
-        console.print("[red]Car ID is required.[/red]")
+        console.print("Car ID is required.")
         return
 
-    cars = manager.load_data(CARS_FILE)
-    if any(car["car_id"] == car_id for car in cars):
-        console.print("[red]Car ID already exists.[/red]")
+    if not validate_required(brand) or not validate_required(model):
+        console.print("Brand and model are required.")
         return
 
     try:
-        new_car = {
-            "car_id": car_id,
-            "brand": brand,
-            "model": model,
-            "year": int(year),
-            "price_per_day": float(price),
-            "available": True
-        }
+        year = int(year)
     except ValueError:
-        console.print("[red]Year and price must be valid numbers.[/red]")
+        console.print("Year must be a number.")
         return
+
+    if not validate_price(price):
+        console.print("Price must be greater than zero.")
+        return
+
+    cars = manager.load_data(CARS_FILE)
+
+    if any(car["car_id"] == car_id for car in cars):
+        console.print("That car ID already exists.")
+        return
+
+    price = str(price).replace(",", "")
+
+    new_car = {
+        "car_id": car_id,
+        "brand": brand,
+        "model": model,
+        "year": year,
+        "price_per_day": float(price),
+        "available": True
+    }
 
     cars.append(new_car)
     manager.save_data(CARS_FILE, cars)
-    console.print("[green]Car added successfully.[/green]")
+
+    console.print("\nCar added successfully.")
+
+
+@require_admin
+def delete_car():
+    show_header("DELETE CAR")
+
+    cars = manager.load_data(CARS_FILE)
+
+    if not cars:
+        console.print("There are no cars to delete.")
+        return
+
+    list_cars()
+
+    car_id = input("\nEnter the car ID to delete: ").strip()
+
+    car = next(
+        (car for car in cars if car["car_id"] == car_id),
+        None
+    )
+
+    if car is None:
+        console.print("Car not found.")
+        return
+
+    if not car["available"]:
+        console.print("A rented car cannot be deleted.")
+        return
+
+    cars.remove(car)
+    manager.save_data(CARS_FILE, cars)
+
+    console.print("Car deleted successfully.")
+
 
 @require_auth
 def rent_car():
-    user = auth.current_user
-    console.print("\n--- Rent a Car ---")
-    list_cars()
-
-    car_id = input("Enter car ID: ")
-    start_date = input("Enter start date (YYYY-MM-DD): ")
-    end_date = input("Enter end date (YYYY-MM-DD): ")
-
-    if not validate_date(start_date) or not validate_date(end_date):
-        console.print("[red]Invalid date format detected.[/red]")
+    if auth.current_user.role != "Customer":
+        console.print("\nOnly customers can rent cars.")
         return
 
-    rental = rental_service.create_rental(user.username, car_id, start_date, end_date)
+    show_header("RENT A CAR")
+
+    list_cars()
+
+    car_id = input("\nCar ID: ").strip()
+    start_date = input("Start date (YYYY-MM-DD): ").strip()
+    end_date = input("End date (YYYY-MM-DD): ").strip()
+
+    if not validate_date(start_date) or not validate_date(end_date):
+        console.print("Please enter valid dates.")
+        return
+
+    rental = rental_service.create_rental(
+        auth.current_user.username,
+        car_id,
+        start_date,
+        end_date
+    )
+
     if rental:
-        console.print("\n[green]Car rented successfully.[/green]")
+        console.print("\nCar rented successfully.")
         console.print(f"Rental ID: {rental.rental_id}")
-        console.print(f"Total cost: {rental.total_cost()}")
+        console.print(f"Total cost: KSh {rental.total_cost():.2f}")
     else:
-        console.print("\n[red]Could not rent the car. Check availability or schedule overlaps.[/red]")
+        console.print(
+            "\nCould not rent the car. "
+            "Check the car ID, availability, or rental dates."
+        )
+
 
 @require_auth
 def list_rentals():
-    user = auth.current_user
+    show_header("RENTALS")
+
     rentals = manager.load_data(RENTALS_FILE)
-    user_rentals = [r for r in rentals if r["username"] == user.username or user.role == "Admin"]
+
+    if auth.current_user.role == "Admin":
+        user_rentals = rentals
+    else:
+        user_rentals = [
+            rental
+            for rental in rentals
+            if rental["username"] == auth.current_user.username
+        ]
 
     if not user_rentals:
-        console.print("[yellow]No rentals found.[/yellow]")
+        console.print("No rentals found.")
         return
 
-    table = Table(title="Rentals")
-    table.add_column("Rental ID")
-    table.add_column("Username")
-    table.add_column("Car ID")
-    table.add_column("Start")
-    table.add_column("End")
-    table.add_column("Status")
+    console.print(
+        "\nRental ID    Username       Car ID       Start Date    End Date      Status"
+    )
+    console.print(
+        "----------------------------------------------------------------------------"
+    )
 
-    for r in user_rentals:
-        table.add_row(r["rental_id"], r["username"], r["car_id"], r["start_date"], r["end_date"], r["status"])
-    console.print(table)
+    for rental in user_rentals:
+        console.print(
+            f"{rental['rental_id']:<13}"
+            f"{rental['username']:<15}"
+            f"{rental['car_id']:<13}"
+            f"{rental['start_date']:<14}"
+            f"{rental['end_date']:<14}"
+            f"{rental['status']}"
+        )
+
 
 @require_auth
 def cancel_rental():
-    user = auth.current_user
-    console.print("\n--- Cancel Rental ---")
-    list_rentals()
+    show_header("CANCEL RENTAL")
 
-    rental_id = input("Enter rental ID to cancel: ")
     rentals = manager.load_data(RENTALS_FILE)
-    
-    rental_item = next((r for r in rentals if r["rental_id"] == rental_id), None)
-    if not rental_item:
-        console.print("[red]Rental record not found.[/red]")
+
+    if auth.current_user.role == "Admin":
+        user_rentals = rentals
+    else:
+        user_rentals = [
+            rental
+            for rental in rentals
+            if rental["username"] == auth.current_user.username
+        ]
+
+    if not user_rentals:
+        console.print("No rentals found.")
         return
 
-    if rental_item["username"] != user.username and user.role != "Admin":
-        console.print("[red]You are not authorized to cancel this rental.[/red]")
+    list_rentals()
+
+    rental_id = input("\nRental ID: ").strip()
+
+    rental = next(
+        (item for item in rentals if item["rental_id"] == rental_id),
+        None
+    )
+
+    if rental is None:
+        console.print("Rental not found.")
+        return
+
+    if (
+        rental["username"] != auth.current_user.username
+        and auth.current_user.role != "Admin"
+    ):
+        console.print("You cannot cancel this rental.")
+        return
+
+    if rental["status"] == "Cancelled":
+        console.print("This rental is already cancelled.")
         return
 
     if rental_service.cancel_rental(rental_id):
-        console.print("[green]Rental cancelled successfully.[/green]")
+        console.print("Rental cancelled successfully.")
     else:
-        console.print("[red]Could not process cancellation at this time.[/red]")
+        console.print("Could not cancel the rental.")
+
+
+def customer_menu():
+    while auth.current_user:
+        show_header("CUSTOMER DASHBOARD")
+
+        console.print(f"Welcome, {auth.current_user.username}!")
+
+        console.print("\n1. View Available Cars")
+        console.print("2. Rent a Car")
+        console.print("3. My Rentals")
+        console.print("4. Cancel Rental")
+        console.print("5. Logout")
+
+        choice = input("\nChoose an option: ").strip()
+
+        if choice == "1":
+            list_cars()
+        elif choice == "2":
+            rent_car()
+        elif choice == "3":
+            list_rentals()
+        elif choice == "4":
+            cancel_rental()
+        elif choice == "5":
+            auth.logout()
+            console.print("Logged out successfully.")
+        else:
+            console.print("Invalid choice.")
+
+
+def admin_menu():
+    while auth.current_user:
+        show_header("ADMIN DASHBOARD")
+
+        console.print(f"Welcome, {auth.current_user.username}!")
+
+        console.print("\n1. View Cars")
+        console.print("2. Add Car")
+        console.print("3. Delete Car")
+        console.print("4. View Rentals")
+        console.print("5. Logout")
+
+        choice = input("\nChoose an option: ").strip()
+
+        if choice == "1":
+            list_cars()
+        elif choice == "2":
+            add_car()
+        elif choice == "3":
+            delete_car()
+        elif choice == "4":
+            list_rentals()
+        elif choice == "5":
+            auth.logout()
+            console.print("Logged out successfully.")
+        else:
+            console.print("Invalid choice.")
+
 
 def main():
     while True:
-        console.print("    CAR RENTAL SYSTEM")
-        console.print("================================")
+        show_header("CAR RENTAL SYSTEM")
 
-        if auth.current_user:
-            console.print(f"Logged in as: [cyan]{auth.current_user.username}[/cyan] ({auth.current_user.role})")
+        console.print("1. Login")
+        console.print("2. Register")
+        console.print("3. Exit")
 
-        console.print("\n1. Register\n2. Login\n3. List Cars\n4. Add Car (Admin)\n5. Rent a Car\n6. My Rentals\n7. Cancel Rental\n8. Logout\n9. Exit")
-        choice = input("\nEnter your choice: ")
+        choice = input("\nChoose an option: ").strip()
 
-        if choice == "1": register()
-        elif choice == "2": login()
-        elif choice == "3": list_cars()
-        elif choice == "4": add_car()
-        elif choice == "5": rent_car()
-        elif choice == "6": list_rentals()
-        elif choice == "7": cancel_rental()
-        elif choice == "8":
-            auth.logout()
-            console.print("[green]Logged out successfully.[/green]")
-        elif choice == "9":
-            console.print("Thank you for using the Car Rental System.")
+        if choice == "1":
+            if login():
+                if auth.current_user.role == "Admin":
+                    admin_menu()
+                else:
+                    customer_menu()
+
+        elif choice == "2":
+            register()
+
+            if auth.current_user:
+                if auth.current_user.role == "Admin":
+                    admin_menu()
+                else:
+                    customer_menu()
+
+        elif choice == "3":
+            console.print(
+                "\nThank you for using the Car Rental System."
+            )
             break
-        else:
-            console.print("[red]Invalid choice. Please select 1-9.[/red]")
 
-if __name__ == "__main__":
+        else:
+            console.print("Invalid choice.")
+
+
+if _name_ == "_main_":
     main()
